@@ -1,0 +1,60 @@
+{
+    "name": "varsite/platform",
+    "description": "Rdzeń platformy: auth, RBAC, media, settings, SEO, audit, rejestr modułów, API.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "illuminate/support": "^12.0",
+        "illuminate/http": "^12.0",
+        "illuminate/routing": "^12.0",
+        "laravel/sanctum": "^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Varsite\\Platform\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Varsite\\Platform\\PlatformServiceProvider"
+            ]
+        },
+        "branch-alias": {
+            "dev-main": "0.1.x-dev"
+        }
+    },
+    "minimum-stability": "dev",
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "pestphp/pest": "^3.5",
+        "pestphp/pest-plugin-laravel": "^3.0",
+        "varsite/audio": "dev-main",
+        "varsite/media": "dev-main"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../module-audio"
+        },
+        {
+            "type": "path",
+            "url": "../module-media"
+        }
+    ],
+    "autoload-dev": {
+        "psr-4": {
+            "Varsite\\Platform\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest"
+    },
+    "prefer-stable": true,
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}

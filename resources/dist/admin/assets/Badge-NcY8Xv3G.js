@@ -1,0 +1,1 @@
+import{e as s}from"./vendor-DSFJrQAK.js";import{c as o}from"./index-rzWga4fc.js";function c({children:a,dot:e,className:t}){return s.jsxs("span",{className:o("badge",t),children:[e&&s.jsx("span",{className:"badge__dot",style:{opacity:.5}}),a]})}export{c as B};
