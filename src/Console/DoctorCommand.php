@@ -35,16 +35,25 @@ final class DoctorCommand extends Command
     /** @var list<array{0:'PASS'|'WARN'|'FAIL',1:string,2:string}> */
     private array $results = [];
 
+    /** Czy baza odpowiada — kontrole schematu wykonujemy wyłącznie wtedy. */
+    private bool $databaseReachable = false;
+
     public function handle(ModuleManager $modules, RouteRegistry $registry, Router $router): int
     {
         $this->components->info('Varsite Platform — diagnostyka (doctor)');
 
-        $this->checkEnvironment();
-        $this->checkApplication();
-        $this->checkVendorIntegrity();
-        $this->checkDatabase();
-        $this->checkPanel();
-        $this->checkRouting($registry, $router, $modules);
+        // Diagnostyka uruchamiana jest wtedy, gdy coś nie działa — sama nie może
+        // przerwać się wyjątkiem. Każda grupa kontroli jest izolowana.
+        $this->guard('Środowisko', fn () => $this->checkEnvironment());
+        $this->guard('Aplikacja', fn () => $this->checkApplication());
+        $this->guard('Pakiety', fn () => $this->checkVendorIntegrity());
+        $this->guard('Baza danych', fn () => $this->checkDatabase());
+        $this->guard('Migracje', fn () => $this->checkMigrations());
+        $this->guard('Uwierzytelnianie', fn () => $this->checkAuth());
+        $this->guard('Panel', fn () => $this->checkPanel());
+        $this->guard('Routing', fn () => $this->checkRouting($registry, $router, $modules));
+        $this->guard('Moduły', fn () => $this->checkModules($modules));
+        $this->guard('Infrastruktura', fn () => $this->checkInfrastructure());
 
         $this->render();
 
@@ -82,6 +91,16 @@ final class DoctorCommand extends Command
             $this->caution('APP_DEBUG=true w produkcji', 'Wyłącz debug: ujawnia szczegóły błędów (ścieżki, zapytania, sekrety).');
         } else {
             $this->ok('APP_ENV='.$this->laravel->environment().', APP_DEBUG='.var_export((bool) config('app.debug'), true));
+        }
+
+        $url = (string) config('app.url');
+        if ($url === '' || $url === 'http://localhost') {
+            $this->caution(
+                'APP_URL nieustawiony (\''.$url.'\')',
+                'Ustaw APP_URL w .env na rzeczywisty adres — używany w linkach, e-mailach i zasobach panelu.',
+            );
+        } else {
+            $this->ok('APP_URL: '.$url);
         }
 
         foreach ([storage_path(), $this->laravel->bootstrapPath('cache')] as $path) {
@@ -152,6 +171,7 @@ final class DoctorCommand extends Command
     {
         try {
             DB::connection()->getPdo();
+            $this->databaseReachable = true;
             $this->ok('Połączenie z bazą ('.DB::connection()->getDriverName().')');
         } catch (Throwable $e) {
             $this->problem('Baza danych: '.$e->getMessage(), 'Sprawdź DB_* w .env; następnie php artisan varsite:install (migracje).');
@@ -202,6 +222,160 @@ final class DoctorCommand extends Command
             : $this->problem('Trasy poza registrarem: '.implode('; ', $violations), 'Wszystkie trasy /api/* muszą przechodzić przez ModuleRouteRegistrar.');
     }
 
+    /** Migracje: brak zaległych to warunek spójności schematu z kodem. */
+    private function checkMigrations(): void
+    {
+        if (! $this->databaseReachable) {
+            $this->caution('Migracje — pominięto (brak połączenia z bazą)', 'Napraw połączenie z bazą, wtedy diagnostyka sprawdzi schemat.');
+
+            return;
+        }
+
+        if (! Schema::hasTable('migrations')) {
+            $this->problem('Brak tabeli migracji', 'Uruchom: php artisan varsite:install (albo php artisan migrate --force).');
+
+            return;
+        }
+
+        try {
+            $pending = $this->laravel->make('migrator')->getMigrationFiles(
+                $this->laravel->make('migrator')->paths() + [$this->laravel->databasePath('migrations')],
+            );
+            $ran = $this->laravel->make('migrator')->getRepository()->getRan();
+            $waiting = array_diff(array_keys($pending), $ran);
+
+            $waiting === []
+                ? $this->ok('Migracje wykonane ('.count($ran).')')
+                : $this->problem(
+                    'Zaległe migracje: '.count($waiting),
+                    'Uruchom: php artisan varsite:update (albo php artisan migrate --force).',
+                );
+        } catch (Throwable $e) {
+            $this->caution('Nie udało się sprawdzić migracji: '.$e->getMessage(), 'Zweryfikuj ręcznie: php artisan migrate:status');
+        }
+    }
+
+    /** Uwierzytelnianie: klucz, Sanctum i model użytkownika muszą być spójne. */
+    private function checkAuth(): void
+    {
+        class_exists(\Laravel\Sanctum\Sanctum::class)
+            ? $this->ok('Sanctum dostępny')
+            : $this->problem('Brak pakietu Sanctum', 'Uruchom: composer require laravel/sanctum && php artisan varsite:install');
+
+        $model = (string) config('auth.providers.users.model', '');
+
+        if ($model === '' || ! class_exists($model)) {
+            $this->problem('Model użytkownika nieustawiony ('.($model ?: 'brak').')', 'Sprawdź config/auth.php → providers.users.model.');
+
+            return;
+        }
+
+        in_array(\Laravel\Sanctum\HasApiTokens::class, class_uses_recursive($model), true)
+            ? $this->ok('Model użytkownika z obsługą tokenów API')
+            : $this->problem(
+                $model.' bez traitu HasApiTokens',
+                'Dodaj trait Laravel\\Sanctum\\HasApiTokens w modelu albo uruchom: php artisan varsite:install',
+            );
+
+        if ($this->databaseReachable && Schema::hasTable('users')) {
+            Schema::hasColumn('users', 'role')
+                ? $this->ok('Kolumna role w tabeli users')
+                : $this->caution('Brak kolumny "role" w users', 'Uruchom: php artisan varsite:update (migracja rdzenia).');
+        }
+    }
+
+    /** Moduły: konfiguracja, migracje i unikalność uprawnień. */
+    private function checkModules(ModuleManager $modules): void
+    {
+        $all = $modules->all();
+
+        if ($all === []) {
+            $this->caution('Brak zainstalowanych modułów', 'Dodaj moduły: composer require varsite/<nazwa> && php artisan varsite:module install <nazwa>');
+
+            return;
+        }
+
+        $seen = [];
+        $collisions = [];
+
+        foreach ($all as $module) {
+            foreach ($module->permissions() as $permission) {
+                if (isset($seen[$permission]) && $seen[$permission] !== $module->key()) {
+                    $collisions[] = sprintf('%s (%s ↔ %s)', $permission, $seen[$permission], $module->key());
+                }
+                $seen[$permission] = $module->key();
+            }
+        }
+
+        $collisions === []
+            ? $this->ok(sprintf('Uprawnienia modułów bez kolizji (%d)', count($seen)))
+            : $this->problem('Kolizje uprawnień: '.implode(', ', $collisions), 'Uprawnienia muszą mieć prefiks modułu (np. "blog.view").');
+    }
+
+    /** Infrastruktura: kolejki, harmonogram, poczta, cache. */
+    private function checkInfrastructure(): void
+    {
+        $queue = (string) config('queue.default');
+        if ($queue === 'sync') {
+            $this->caution(
+                'Kolejki w trybie synchronicznym',
+                'Do zadań w tle ustaw QUEUE_CONNECTION=database (lub redis) i uruchom workera: php artisan queue:work',
+            );
+        } else {
+            $this->ok('Kolejki: '.$queue);
+            if ($queue === 'database' && $this->databaseReachable && ! Schema::hasTable('jobs')) {
+                $this->problem('Brak tabeli jobs dla kolejki database', 'Uruchom: php artisan queue:table && php artisan migrate --force');
+            }
+        }
+
+        $schedule = $this->laravel->make(\Illuminate\Console\Scheduling\Schedule::class);
+        $events = method_exists($schedule, 'events') ? $schedule->events() : [];
+
+        if ($events === []) {
+            $this->ok('Harmonogram: brak zadań (cron niewymagany)');
+        } else {
+            $this->caution(
+                sprintf('Harmonogram: %d zadań — wymaga wpisu cron', count($events)),
+                'Dodaj w cron: * * * * * cd '.base_path().' && php artisan schedule:run >> /dev/null 2>&1',
+            );
+        }
+
+        $mailer = (string) config('mail.default');
+        if (in_array($mailer, ['log', 'array'], true)) {
+            $this->caution(
+                'Poczta w trybie "'.$mailer.'" — wiadomości nie są wysyłane',
+                'Skonfiguruj MAIL_MAILER i dane serwera SMTP w .env.',
+            );
+        } else {
+            $this->ok('Poczta: '.$mailer);
+        }
+
+        $cache = (string) config('cache.default');
+        $this->ok('Cache: '.$cache);
+        if ($cache === 'database' && $this->databaseReachable && ! Schema::hasTable('cache')) {
+            $this->problem('Brak tabeli cache', 'Uruchom: php artisan cache:table && php artisan migrate --force');
+        }
+
+        if ($this->laravel->environment('production')) {
+            $this->laravel->configurationIsCached()
+                ? $this->ok('Cache konfiguracji zbudowany')
+                : $this->caution('Konfiguracja bez cache w produkcji', 'Uruchom: php artisan varsite:update (buduje config:cache i route:cache).');
+        }
+    }
+
+    /** Izolacja grupy kontroli — awaria jednej nie przerywa całej diagnostyki. */
+    private function guard(string $group, callable $check): void
+    {
+        try {
+            $check();
+        } catch (Throwable $e) {
+            $this->problem(
+                sprintf('%s — diagnostyka nie mogła dokończyć sprawdzenia', $group),
+                sprintf('%s: %s', $e::class, $e->getMessage()),
+            );
+        }
+    }
+
     private function ok(string $label): void
     {
         $this->results[] = ['PASS', $label, ''];
@@ -232,10 +406,36 @@ final class DoctorCommand extends Command
             }
         }
 
+        $fails = count(array_filter($this->results, static fn (array $r): bool => $r[0] === 'FAIL'));
+        $warns = count(array_filter($this->results, static fn (array $r): bool => $r[0] === 'WARN'));
+        $passes = count($this->results) - $fails - $warns;
+
         $this->newLine();
-        $fails = count(array_filter($this->results, fn ($r) => $r[0] === 'FAIL'));
-        $warns = count(array_filter($this->results, fn ($r) => $r[0] === 'WARN'));
-        $this->components->info(sprintf('Wynik: %d PASS · %d WARN · %d FAIL', count($this->results) - $fails - $warns, $warns, $fails));
+
+        if ($fails === 0) {
+            $this->components->info(sprintf(
+                'PLATFORMA JEST GOTOWA DO PRACY.   %d sprawdzeń OK%s',
+                $passes,
+                $warns > 0 ? sprintf(', %d zalecenie(a) do rozważenia', $warns) : '',
+            ));
+
+            return;
+        }
+
+        $this->components->error(sprintf(
+            'PLATFORMA NIE JEST GOTOWA DO PRACY.   %d problem(ów) krytycznych do naprawienia',
+            $fails,
+        ));
+        $this->newLine();
+        $this->line('  <options=bold>Do naprawienia:</>');
+        foreach ($this->results as [$status, $label, $remedy]) {
+            if ($status === 'FAIL') {
+                $this->line('   <fg=red>✗</> '.$label);
+                if ($remedy !== '') {
+                    $this->line('     <fg=gray>→ '.$remedy.'</>');
+                }
+            }
+        }
     }
 
     private function relative(string $path): string

@@ -13,10 +13,12 @@ use Varsite\Platform\Console\AdminCreateCommand;
 use Varsite\Platform\Console\DoctorCommand;
 use Varsite\Platform\Console\InstallCommand;
 use Varsite\Platform\Console\ModuleCommand;
+use Varsite\Platform\Console\UpdateCommand;
 use Varsite\Platform\Console\ModulesCommand;
 use Varsite\Platform\Console\PlatformRoutesCommand;
 use Varsite\Platform\Console\RoutesVerifyCommand;
 use Varsite\Platform\Http\Controllers\FrontendController;
+use Varsite\Platform\Capabilities\CapabilityRegistry;
 use Varsite\Platform\Routing\ModuleRouteRegistrar;
 use Varsite\Platform\Routing\RouteRegistry;
 use Varsite\Platform\Support\ModuleManager;
@@ -37,6 +39,7 @@ final class PlatformServiceProvider extends ServiceProvider
 
         $this->app->singleton(ModuleManager::class);
         $this->app->singleton(NavRegistry::class);
+        $this->app->singleton(CapabilityRegistry::class);
         $this->app->singleton(RouteRegistry::class);
         $this->app->singleton(
             ModuleRouteRegistrar::class,
@@ -66,7 +69,7 @@ final class PlatformServiceProvider extends ServiceProvider
         ], 'platform-admin-assets');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([AdminCreateCommand::class, DoctorCommand::class, InstallCommand::class, ModuleCommand::class, PlatformRoutesCommand::class, RoutesVerifyCommand::class]);
+            $this->commands([AdminCreateCommand::class, DoctorCommand::class, InstallCommand::class, ModuleCommand::class, PlatformRoutesCommand::class, RoutesVerifyCommand::class, UpdateCommand::class]);
         }
 
         $this->app->booted(function (): void {

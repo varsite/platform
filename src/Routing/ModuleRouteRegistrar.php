@@ -11,7 +11,7 @@ use Illuminate\Routing\Router;
  * Jedyny punkt rejestracji tras API platformy (ADR: Core-first routing).
  * Moduł w swoim ServiceProviderze woła:
  *
- *     $registrar->register('audio', require __DIR__.'/../routes/api.php');
+ *     $registrar->register('blog', require __DIR__.'/../routes/api.php');
  *
  * gdzie plik tras zwraca Closure(ScopedRoutes $r): void.
  * Kolizje (Core↔moduł, moduł↔moduł, duplikat wewnętrzny) rzucają

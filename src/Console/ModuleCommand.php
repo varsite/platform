@@ -25,7 +25,7 @@ final class ModuleCommand extends Command
 {
     protected $signature = 'varsite:module
         {action : list | install}
-        {module? : Klucz modułu przy "install", np. audio}
+        {module? : Klucz modułu przy "install", np. blog}
         {--skip-migrations : Nie uruchamiaj migracji modułu}';
 
     protected $description = 'Moduły platformy: lista i instalacja (varsite:module install <key>)';

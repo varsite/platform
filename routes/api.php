@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Varsite\Platform\Http\Controllers\AuthController;
 use Varsite\Platform\Http\Controllers\BootstrapController;
+use Varsite\Platform\Http\Controllers\CapabilityController;
 use Varsite\Platform\Http\Controllers\HealthController;
 use Varsite\Platform\Routing\ScopedRoutes;
 
@@ -18,5 +19,6 @@ return static function (ScopedRoutes $r): void {
         $r->middleware('throttle:10,1')->post('auth/login', [AuthController::class, 'login']);
         $r->middleware('auth:sanctum')->post('auth/logout', [AuthController::class, 'logout']);
         $r->middleware('auth:sanctum')->get('admin/bootstrap', BootstrapController::class);
+        $r->middleware('auth:sanctum')->get('admin/capabilities/{key}', CapabilityController::class);
     });
 };

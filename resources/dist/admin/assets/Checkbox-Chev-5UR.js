@@ -1,1 +1,0 @@
-import{e as o}from"./vendor-DSFJrQAK.js";import{c as a}from"./index-rzWga4fc.js";import{a as m}from"./icons-Ci6tS22i.js";function b({checked:r,onCheckedChange:t,label:s,className:i}){return o.jsx("button",{type:"button",role:"checkbox","aria-checked":r,"aria-label":s,className:a("ck",r&&"ck--on",i),onClick:()=>t==null?void 0:t(!r),children:r&&o.jsx(m,{size:12})})}export{b as C};

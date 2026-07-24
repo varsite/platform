@@ -107,13 +107,33 @@ final class InstallCommand extends Command
             },
         );
 
+        // Weryfikacja końcowa: instalacja jest ukończona dopiero wtedy, gdy
+        // diagnostyka potwierdza gotowość — nie wtedy, gdy komendy się wykonały.
         $this->newLine();
-        $this->components->bulletList([
-            'Panel: <options=bold>/admin</> — serwowany z pakietu; aktualizacja platformy = <options=bold>composer update "varsite/*" && php artisan varsite:install</>',
-            'Kolejne moduły: <options=bold>composer require varsite/module-<key></> → <options=bold>php artisan varsite:module install <key></>',
-            'Rejestracja providerów/tras/nawigacji: automatyczna (Package Discovery + rejestry platformy)',
-            'Kontrola: <options=bold>varsite:module list</> · <options=bold>varsite:routes:verify</>',
-        ]);
+        $healthy = $this->call('varsite:doctor') === self::SUCCESS;
+
+        $this->newLine();
+
+        if (! $healthy) {
+            $this->components->error('Instalacja wymaga uwagi — powyżej wypisano problemy wraz z rozwiązaniem.');
+            $this->components->bulletList([
+                'Popraw wskazane punkty i uruchom ponownie: <options=bold>php artisan varsite:install</> (komenda jest idempotentna)',
+            ]);
+
+            return self::FAILURE;
+        }
+
+        $url = rtrim((string) config('app.url'), '/');
+
+        $this->components->info('Platforma jest gotowa do pracy.');
+        $this->components->bulletList(array_filter([
+            sprintf('Panel administracyjny: <options=bold>%s/admin</>', $url),
+            sprintf('API platformy: <options=bold>%s/api/v1</>', $url),
+            $this->laravel->environment('production')
+                ? null
+                : 'Serwer deweloperski: <options=bold>php artisan serve</>',
+            'Kolejne moduły: <options=bold>composer require varsite/<nazwa></> → <options=bold>php artisan varsite:module install <nazwa></>',
+        ]));
 
         return self::SUCCESS;
     }
@@ -133,6 +153,30 @@ final class InstallCommand extends Command
         if ($name !== '' && $name !== $current) {
             $this->setEnv(['APP_NAME' => $name]);
             config(['app.name' => $name]);
+        }
+
+        $currentUrl = (string) config('app.url', 'http://localhost');
+
+        $url = text(
+            label: 'Adres aplikacji (URL)',
+            placeholder: 'https://twoja-domena.pl',
+            default: $currentUrl === 'http://localhost' ? '' : $currentUrl,
+            hint: 'Używany w linkach, e-mailach i zasobach panelu.',
+        );
+
+        if ($url !== '' && $url !== $currentUrl) {
+            $url = rtrim($url, '/');
+            $this->setEnv(['APP_URL' => $url]);
+            config(['app.url' => $url]);
+
+            // Produkcyjny adres HTTPS => środowisko produkcyjne (cache, publikacja assetów).
+            if (str_starts_with($url, 'https://') && $this->laravel->environment('local')) {
+                if (confirm('Wygląda na wdrożenie produkcyjne. Ustawić APP_ENV=production i wyłączyć debug?', default: true)) {
+                    $this->setEnv(['APP_ENV' => 'production', 'APP_DEBUG' => 'false']);
+                    $this->laravel->detectEnvironment(static fn (): string => 'production');
+                    config(['app.debug' => false]);
+                }
+            }
         }
     }
 
@@ -186,6 +230,16 @@ final class InstallCommand extends Command
                 'host' => $host, 'port' => $port, 'database' => $database,
                 'username' => $username, 'password' => $password,
             ]);
+        }
+
+        if (! $this->databaseWorks()) {
+            // Baza może jeszcze nie istnieć — spróbujmy ją utworzyć zamiast odsyłać
+            // użytkownika do panelu hostingu.
+            if ($connection === 'mysql' && isset($host, $port, $database, $username)
+                && $this->tryCreateDatabase($host, $port, $database, $username, $password ?? '')) {
+                $this->components->info(sprintf('Utworzono bazę danych "%s".', $database));
+                $this->refreshConnection($connection);
+            }
         }
 
         if (! $this->databaseWorks()) {
@@ -243,6 +297,41 @@ final class InstallCommand extends Command
         } catch (Throwable) {
             return false;
         }
+    }
+
+    /**
+     * Próba utworzenia bazy, gdy serwer odpowiada, ale baza nie istnieje.
+     * Łączymy się bez wskazania bazy — jeśli użytkownik nie ma uprawnień
+     * do CREATE DATABASE (typowe na hostingach współdzielonych), po prostu
+     * zwracamy false i prosimy o utworzenie jej w panelu.
+     */
+    private function tryCreateDatabase(string $host, string $port, string $database, string $username, string $password): bool
+    {
+        if (! preg_match('/^[A-Za-z0-9_]+$/', $database)) {
+            return false; // nazwa spoza bezpiecznego zestawu — nie budujemy z niej SQL
+        }
+
+        try {
+            $pdo = new \PDO(
+                sprintf('mysql:host=%s;port=%s', $host, $port),
+                $username,
+                $password,
+                [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_TIMEOUT => 5],
+            );
+            $pdo->exec(sprintf(
+                'CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+                $database,
+            ));
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function refreshConnection(string $connection): void
+    {
+        DB::purge($connection);
     }
 
     /** Ustawia config połączenia wprost z podanych wartości i czyni je domyślnym (bez polegania na przeładowaniu .env). */

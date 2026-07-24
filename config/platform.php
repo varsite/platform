@@ -6,6 +6,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Wersja kontraktu platformy (kernel API)
+    |--------------------------------------------------------------------------
+    | Zwracana w /admin/bootstrap. Rośnie WYŁĄCZNIE przy zmianie łamiącej —
+    | dodawanie pól i nowych rodzajów możliwości jest wstecznie zgodne.
+    */
+    'contract' => [
+        'version' => '1.0',
+    ],
+
+
+    /*
+    |--------------------------------------------------------------------------
     | Uwierzytelnianie panelu
     |--------------------------------------------------------------------------
     | Czas życia tokenów Sanctum wydawanych przy logowaniu (dni).
