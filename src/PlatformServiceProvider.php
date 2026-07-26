@@ -7,6 +7,7 @@ namespace Varsite\Platform;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -20,6 +21,7 @@ use Varsite\Platform\Console\PlatformRoutesCommand;
 use Varsite\Platform\Console\RoutesVerifyCommand;
 use Varsite\Platform\Http\Controllers\FrontendController;
 use Varsite\Platform\Capabilities\CapabilityRegistry;
+use Throwable;
 use Varsite\Platform\Capabilities\Action;
 use Varsite\Platform\Capabilities\Column;
 use Varsite\Platform\Capabilities\Field;
@@ -76,6 +78,8 @@ final class PlatformServiceProvider extends ServiceProvider
 
         // Stan platformy jako zwykła możliwość — ten sam mechanizm, z którego
         // korzystają moduły. Renderer decyduje, gdzie i jak ją pokazać.
+        $this->applyStoredSettings();
+
         $this->app->make(CapabilityRegistry::class)->register(
             ResourceCapability::make('platform.users')
                 ->label('Konto', 'Użytkownicy')
@@ -125,6 +129,11 @@ final class PlatformServiceProvider extends ServiceProvider
                     'name' => ['required', 'string', 'max:120'],
                     'url' => ['nullable', 'url', 'max:190'],
                     'timezone' => ['nullable', 'timezone'],
+                ])
+                ->appliesTo([
+                    'name' => 'app.name',
+                    'url' => 'app.url',
+                    'timezone' => 'app.timezone',
                 ]),
         )->register(
             WidgetCapability::make('platform.health')
@@ -193,5 +202,60 @@ final class PlatformServiceProvider extends ServiceProvider
         }
 
         throw new \RuntimeException($message.' — użyj ModuleRouteRegistrar (varsite:routes:verify).');
+    }
+
+    /**
+     * Zapisane ustawienia nadpisują konfigurację aplikacji — JEDEN centralny
+     * mechanizm dla wszystkich grup, obecnych i przyszłych.
+     *
+     * Moduł deklaruje mapowanie przez `SettingCapability::appliesTo()` i nie
+     * pisze żadnej logiki ładowania. W rdzeniu nie ma listy modułów ani
+     * wyjątków — iterujemy po rejestrze możliwości (N4).
+     *
+     * Odczyt jest tani (jeden wiersz z cache na grupę) i pomijany, gdy baza
+     * jeszcze nie istnieje albo trwa instalacja czy budowanie cache.
+     */
+    private function applyStoredSettings(): void
+    {
+        if ($this->app->runningInConsole() && ! $this->app->environment('testing')) {
+            $command = $_SERVER['argv'][1] ?? '';
+
+            if (in_array($command, ['varsite:install', 'migrate', 'config:cache', 'optimize'], true)) {
+                return;
+            }
+        }
+
+        try {
+            if (! Schema::hasTable('platform_settings')) {
+                return;
+            }
+
+            $settings = $this->app->make(Settings::class);
+            $registry = $this->app->make(CapabilityRegistry::class);
+        } catch (Throwable) {
+            return; // brak bazy lub tabeli — konfiguracja pozostaje bez zmian
+        }
+
+        foreach ($registry->all() as $capability) {
+            if (! $capability instanceof SettingCapability) {
+                continue;
+            }
+
+            $map = $capability->configMap();
+
+            if ($map === []) {
+                continue; // grupa bez wpływu na konfigurację — sama dana
+            }
+
+            $values = $settings->all($capability->key());
+
+            foreach ($map as $field => $target) {
+                $value = $values[$field] ?? null;
+
+                if ($value !== null && $value !== '') {
+                    config([$target => $value]);
+                }
+            }
+        }
     }
 }

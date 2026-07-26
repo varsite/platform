@@ -43,6 +43,12 @@ final class SettingCapability implements Capability
     /** @var array<string, list<string>|string> */
     private array $rules = [];
 
+    /** @var array<string, string> pole ustawień => klucz konfiguracji */
+    private array $configMap = [];
+
+    /** @var array<string, string> pole => klucz konfiguracji */
+    private array $appliesTo = [];
+
     private function __construct(private readonly string $key)
     {
         if (! str_contains($key, '.')) {
@@ -146,6 +152,26 @@ final class SettingCapability implements Capability
         return $this;
     }
 
+    /**
+     * Mapowanie pól na klucze konfiguracji Laravela. Zadeklarowane wartości
+     * nadpisują konfigurację przy bootowaniu — rdzeń stosuje to samo dla
+     * WSZYSTKICH grup ustawień, więc moduł nie pisze własnej logiki ładowania.
+     *
+     * @param array<string, string> $map ['name' => 'app.name']
+     */
+    public function appliesTo(array $map): self
+    {
+        $this->configMap = $map;
+
+        return $this;
+    }
+
+    /** @return array<string, string> */
+    public function configMap(): array
+    {
+        return $this->configMap;
+    }
+
     /** @return array<string, mixed> */
     public function defaultValues(): array
     {
@@ -189,6 +215,10 @@ final class SettingCapability implements Capability
             'permission' => $this->permission,
             'endpoint' => '/v1/admin/settings/'.$this->key,
             'fields' => array_map(static fn (Field $f): array => $f->toArray(), $this->fields),
+            // Mapowanie jest częścią kontraktu, nie szczegółem implementacji —
+            // pozwala wygenerować dokumentację, eksport konfiguracji, CLI i API
+            // bez zaglądania w kod modułu.
+            'appliesTo' => $this->configMap,
         ], static fn (mixed $v): bool => $v !== null && $v !== '' && $v !== []);
     }
 }

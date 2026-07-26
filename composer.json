@@ -31,10 +31,11 @@
         "pestphp/pest": "^3.5",
         "pestphp/pest-plugin-laravel": "^3.0",
         "varsite/audio": "dev-main",
-        "varsite/media": "dev-main",
-        "varsite/cms": "dev-main",
         "varsite/catalog": "dev-main",
-        "varsite/inventory": "dev-main"
+        "varsite/cms": "dev-main",
+        "varsite/inventory": "dev-main",
+        "varsite/media": "dev-main",
+        "varsite/orders": "dev-main"
     },
     "repositories": [
         {
@@ -56,6 +57,10 @@
         {
             "type": "path",
             "url": "../module-inventory"
+        },
+        {
+            "type": "path",
+            "url": "../module-orders"
         }
     ],
     "autoload-dev": {

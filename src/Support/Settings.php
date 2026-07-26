@@ -26,6 +26,9 @@ final class Settings
 
     private const CACHE_PREFIX = 'varsite.settings.';
 
+    /** Zbiorcza nakładka konfiguracji — jeden odczyt na żądanie, niezależnie od liczby modułów. */
+    private const OVERLAY_KEY = 'varsite.settings.overlay';
+
     public function __construct(private readonly CapabilityRegistry $capabilities) {}
 
     /**
@@ -55,6 +58,53 @@ final class Settings
         );
 
         Cache::forget(self::CACHE_PREFIX.$key);
+        // Zapis dowolnej grupy unieważnia nakładkę — odświeżenie jest
+        // automatyczne, bez ręcznego czyszczenia cache.
+        Cache::forget(self::OVERLAY_KEY);
+    }
+
+    /**
+     * Nakładka konfiguracyjna: wszystkie mapowania wszystkich grup sprowadzone
+     * do jednej tablicy `klucz konfiguracji => wartość`.
+     *
+     * Liczy się raz i trafia do cache pod JEDNYM kluczem, więc koszt na żądanie
+     * jest stały niezależnie od liczby zainstalowanych modułów. Zapis dowolnej
+     * grupy unieważnia całość, więc zmiana ustawienia działa natychmiast.
+     *
+     * @return array<string, mixed>
+     */
+    public function configOverlay(): array
+    {
+        /** @var array<string, mixed> $overlay */
+        $overlay = Cache::rememberForever(self::OVERLAY_KEY, function (): array {
+            $result = [];
+
+            foreach ($this->capabilities->all() as $capability) {
+                if (! $capability instanceof SettingCapability) {
+                    continue;
+                }
+
+                $map = $capability->configMap();
+
+                if ($map === []) {
+                    continue;
+                }
+
+                $values = $this->all($capability->key());
+
+                foreach ($map as $field => $configKey) {
+                    $value = $values[$field] ?? null;
+
+                    if ($value !== null && $value !== '') {
+                        $result[$configKey] = $value;
+                    }
+                }
+            }
+
+            return $result;
+        });
+
+        return $overlay;
     }
 
     /** @return array<string, mixed> */

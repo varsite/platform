@@ -30,7 +30,7 @@ return [
         | Role o pełnym dostępie — otrzymują wszystkie uprawnienia istniejące
         | w instalacji, także z modułów doinstalowanych później.
         */
-        'superuser_roles' => ['owner', 'Właściciel'],
+        'superuser_roles' => ['owner'],
 
         /*
         | Uprawnienia rdzenia (moduły deklarują własne w PlatformModule).
@@ -44,6 +44,16 @@ return [
         'roles' => [
             'editor' => ['audio.view', 'audio.create', 'audio.update', 'media.view', 'media.upload'],
             'viewer' => ['audio.view', 'media.view'],
+        ],
+
+        /*
+        | Etykiety ról dla interfejsu. Identyfikator pozostaje angielski
+        | i niezmienny; tłumaczenie to wyłącznie warstwa prezentacji.
+        */
+        'role_labels' => [
+            'owner' => 'Właściciel',
+            'editor' => 'Redaktor',
+            'viewer' => 'Podgląd',
         ],
     ],
 
