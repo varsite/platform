@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Varsite\Platform\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Process;
 use Varsite\Platform\Support\ModuleManager;
 
 /**
@@ -82,7 +83,21 @@ final class UpdateCommand extends Command
         });
 
         $this->newLine();
-        $healthy = $this->call('varsite:doctor') === self::SUCCESS;
+
+        // Diagnostyka MUSI działać w świeżym procesie: bieżący wystartował przed
+        // aktualizacją, więc trzyma w pamięci trasy i konfigurację z poprzedniej
+        // wersji. Uruchomienie jej tutaj dawałoby fałszywe rozbieżności.
+        $artisan = base_path('artisan');
+
+        if (is_file($artisan) && ! $this->laravel->runningUnitTests()) {
+            $result = Process::path(base_path())->timeout(120)->run([PHP_BINARY, $artisan, 'varsite:doctor']);
+            $this->output->write($result->output());
+            $healthy = $result->successful();
+        } else {
+            // Środowisko bez skryptu artisan (np. testy pakietu) — diagnostyka w tym procesie.
+            $healthy = $this->call('varsite:doctor') === self::SUCCESS;
+        }
+
         $this->newLine();
 
         if (! $healthy) {

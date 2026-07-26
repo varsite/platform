@@ -190,8 +190,24 @@ final class ResourceCapability implements Capability
                 'declaration' => '/v1/admin/capabilities/'.$this->key,
                 'data' => $this->endpoint,
                 'open' => $this->routePath(),
+                // Relacja obecna tylko wtedy, gdy zasób zadeklarował filtr
+                // wyszukiwania — klient wie, gdzie szukać, bez pobierania
+                // pełnych deklaracji wszystkich zasobów przy starcie.
+                'search' => $this->searchable() ? $this->endpoint : null,
             ]),
         ], static fn (mixed $v): bool => $v !== null && $v !== '');
+    }
+
+    /** Czy zasób obsługuje wyszukiwanie tekstowe (zadeklarowany filtr typu search). */
+    private function searchable(): bool
+    {
+        foreach ($this->filters as $filter) {
+            if (($filter->toArray()['type'] ?? null) === 'search') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string,mixed> */

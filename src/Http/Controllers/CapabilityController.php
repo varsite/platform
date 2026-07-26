@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Varsite\Platform\Http\Concerns\CachesContract;
 use Varsite\Platform\Capabilities\CapabilityRegistry;
+use Varsite\Platform\Support\Rbac;
 
 /**
  * Deklaracja pojedynczej możliwości (drugi krok wzorca:
@@ -20,9 +21,9 @@ final class CapabilityController
 {
     use CachesContract;
 
-    public function __invoke(Request $request, CapabilityRegistry $registry, string $key): JsonResponse
+    public function __invoke(Request $request, CapabilityRegistry $registry, Rbac $rbac, string $key): JsonResponse
     {
-        $permissions = ['*']; // RBAC granularne: F2
+        $permissions = $rbac->permissionsFor($request->user());
         $capability = $registry->visibleTo($permissions)[$key] ?? null;
 
         if ($capability === null) {

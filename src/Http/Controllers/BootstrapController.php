@@ -10,7 +10,7 @@ use Varsite\Platform\Contracts\PlatformModule;
 use Varsite\Platform\Http\Concerns\CachesContract;
 use Varsite\Platform\Capabilities\CapabilityRegistry;
 use Varsite\Platform\Support\ModuleManager;
-use Varsite\Platform\Support\NavRegistry;
+use Varsite\Platform\Support\Rbac;
 
 /**
  * GET /api/v1/admin/bootstrap — kernel API platformy.
@@ -19,6 +19,10 @@ use Varsite\Platform\Support\NavRegistry;
  * mobilnych, frontendów SSR, CLI i narzędzi, które dopiero powstaną. Odpowiada
  * na pytanie „jakie możliwości udostępnia ta instalacja platformy", a nie
  * „jak ma wyglądać panel" — prezentacja należy do klienta.
+ *
+ * Nawigacja NIE jest osobnym bytem w kontrakcie: klient wyprowadza ją z możliwości
+ * (grupowanie po `owner`, etykieta grupy z `modules[].label`, ścieżka z `links.open`).
+ * Dzięki temu ścieżka, menu i uprawnienia nie mogą się rozjechać — jest jedno źródło.
  *
  * Zwraca wyłącznie LEKKI manifest. Szczegóły (kolumny, pola, konfiguracja
  * widgetu) klient pobiera leniwie przez `links.declaration`, gdy realnie ich
@@ -39,14 +43,18 @@ final class BootstrapController
     public function __invoke(
         Request $request,
         ModuleManager $modules,
-        NavRegistry $nav,
         CapabilityRegistry $capabilities,
+        Rbac $rbac,
     ): JsonResponse {
         $user = $request->user();
-        $permissions = ['*']; // RBAC granularne: F2
+        $permissions = $rbac->permissionsFor($user);
 
         $installed = array_map(
-            static fn (PlatformModule $m): array => ['key' => $m->key(), 'version' => $m->version()],
+            static fn (PlatformModule $m): array => [
+                'key' => $m->key(),
+                'label' => $m->label(),
+                'version' => $m->version(),
+            ],
             array_values($modules->all()),
         );
 
@@ -65,7 +73,6 @@ final class BootstrapController
             ],
             'permissions' => $permissions,
             'modules' => $installed,
-            'navigation' => $nav->toArray(),
             'capabilities' => $capabilities->manifest($permissions),
         ];
 

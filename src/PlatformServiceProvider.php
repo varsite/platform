@@ -6,6 +6,7 @@ namespace Varsite\Platform;
 
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -19,10 +20,18 @@ use Varsite\Platform\Console\PlatformRoutesCommand;
 use Varsite\Platform\Console\RoutesVerifyCommand;
 use Varsite\Platform\Http\Controllers\FrontendController;
 use Varsite\Platform\Capabilities\CapabilityRegistry;
+use Varsite\Platform\Capabilities\Action;
+use Varsite\Platform\Capabilities\Column;
+use Varsite\Platform\Capabilities\Field;
+use Varsite\Platform\Capabilities\Filter;
+use Varsite\Platform\Capabilities\ResourceCapability;
+use Varsite\Platform\Capabilities\SettingCapability;
+use Varsite\Platform\Capabilities\WidgetCapability;
 use Varsite\Platform\Routing\ModuleRouteRegistrar;
 use Varsite\Platform\Routing\RouteRegistry;
 use Varsite\Platform\Support\ModuleManager;
-use Varsite\Platform\Support\NavRegistry;
+use Varsite\Platform\Support\Rbac;
+use Varsite\Platform\Support\Settings;
 
 /**
  * Provider rdzenia platformy (Core-first routing).
@@ -38,8 +47,9 @@ final class PlatformServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/platform.php', 'platform');
 
         $this->app->singleton(ModuleManager::class);
-        $this->app->singleton(NavRegistry::class);
         $this->app->singleton(CapabilityRegistry::class);
+        $this->app->singleton(Rbac::class);
+        $this->app->singleton(Settings::class);
         $this->app->singleton(RouteRegistry::class);
         $this->app->singleton(
             ModuleRouteRegistrar::class,
@@ -57,7 +67,75 @@ final class PlatformServiceProvider extends ServiceProvider
         $registrar = $this->app->make(ModuleRouteRegistrar::class);
         $registrar->register('core', require __DIR__.'/../routes/api.php');
 
-        $this->registerCoreNavigation();
+        // Rozstrzyganie uprawnień należy do Core — moduły deklarują wyłącznie
+        // identyfikatory i polityki, nigdy nie wiedzą o rolach ani użytkownikach.
+        Gate::before(function ($user, string $ability): ?bool {
+            return $this->app->make(Rbac::class)->allows($user, $ability) ? true : null;
+        });
+
+
+        // Stan platformy jako zwykła możliwość — ten sam mechanizm, z którego
+        // korzystają moduły. Renderer decyduje, gdzie i jak ją pokazać.
+        $this->app->make(CapabilityRegistry::class)->register(
+            ResourceCapability::make('platform.users')
+                ->label('Konto', 'Użytkownicy')
+                ->icon('users')
+                ->endpoint('/v1/admin/users')
+                ->permission('platform.users')
+                ->columns([
+                    Column::text('name')->label('Imię i nazwisko')->sortable()->primary(),
+                    Column::text('email')->label('E-mail'),
+                    Column::badge('role')->label('Rola'),
+                    Column::date('created_at')->label('Dodano')->sortable(),
+                ])
+                ->filters([
+                    Filter::search(['name', 'email']),
+                    Filter::select('role', '/v1/admin/users/roles')->label('Rola'),
+                ])
+                ->form([
+                    Field::text('name')->label('Imię i nazwisko')->required(),
+                    Field::text('email')->label('E-mail')->required(),
+                    Field::reference('role', '/v1/admin/users/roles')->label('Rola')
+                        ->hint('Decyduje o zakresie uprawnień w panelu.'),
+                    Field::text('password')->label('Hasło')
+                        ->hint('Przy edycji zostaw puste, aby nie zmieniać.'),
+                ])
+                ->actions([Action::edit(), Action::delete()->permission('platform.users')]),
+        )->register(
+            SettingCapability::make('platform.general')
+                ->label('Ustawienia ogólne')
+                ->description('Nazwa i adres instalacji oraz strefa czasowa używana w interfejsie.')
+                ->icon('settings')
+                ->permission('platform.settings')
+                ->order(10)
+                ->fields([
+                    Field::text('name')->label('Nazwa instalacji')->required()
+                        ->hint('Widoczna w panelu i tytułach stron.'),
+                    Field::text('url')->label('Adres aplikacji')
+                        ->hint('Używany w linkach i wiadomościach e-mail.'),
+                    Field::text('timezone')->label('Strefa czasowa')
+                        ->hint('Identyfikator IANA, np. Europe/Warsaw.'),
+                ])
+                ->defaults([
+                    'name' => config('app.name'),
+                    'url' => config('app.url'),
+                    'timezone' => config('app.timezone'),
+                ])
+                ->rules([
+                    'name' => ['required', 'string', 'max:120'],
+                    'url' => ['nullable', 'url', 'max:190'],
+                    'timezone' => ['nullable', 'timezone'],
+                ]),
+        )->register(
+            WidgetCapability::make('platform.health')
+                ->label('Stan platformy')
+                ->icon('activity')
+                ->variant('status')
+                ->size(WidgetCapability::SIZE_HALF)
+                ->order(1)
+                ->endpoint('/v1/admin/health-summary')
+                ->refresh(120),
+        );
 
         $this->publishes([
             __DIR__.'/../config/platform.php' => config_path('platform.php'),
@@ -78,14 +156,6 @@ final class PlatformServiceProvider extends ServiceProvider
         });
     }
 
-    private function registerCoreNavigation(): void
-    {
-        $nav = $this->app->make(NavRegistry::class);
-
-        $nav->item('Przegląd', ['id' => 'dashboard', 'label' => 'Pulpit', 'icon' => 'layout-dashboard', 'href' => '/'], groupOrder: 10);
-        $nav->item('System', ['id' => 'users', 'label' => 'Użytkownicy', 'icon' => 'users', 'href' => '/users', 'order' => 10], groupOrder: 90);
-        $nav->item('System', ['id' => 'settings', 'label' => 'Ustawienia', 'icon' => 'settings', 'href' => '/settings', 'order' => 20], groupOrder: 90);
-    }
 
     /** Frontendy i fallback — po wszystkich providerach, żeby fallback był ostatnią trasą. */
     private function registerFrontendRoutes(): void

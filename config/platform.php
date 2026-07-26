@@ -12,7 +12,7 @@ return [
     | dodawanie pól i nowych rodzajów możliwości jest wstecznie zgodne.
     */
     'contract' => [
-        'version' => '1.0',
+        'version' => '2.0',
     ],
 
 
@@ -25,6 +25,26 @@ return [
     */
     'auth' => [
         'token_lifetime_days' => (int) env('VARSITE_TOKEN_TTL_DAYS', 30),
+
+        /*
+        | Role o pełnym dostępie — otrzymują wszystkie uprawnienia istniejące
+        | w instalacji, także z modułów doinstalowanych później.
+        */
+        'superuser_roles' => ['owner', 'Właściciel'],
+
+        /*
+        | Uprawnienia rdzenia (moduły deklarują własne w PlatformModule).
+        */
+        'core_permissions' => ['platform.settings', 'platform.users'],
+
+        /*
+        | Mapa rola => uprawnienia. Identyfikatory są nieprzezroczyste — Core
+        | nie nadaje im znaczenia, jedynie sprawdza przynależność.
+        */
+        'roles' => [
+            'editor' => ['audio.view', 'audio.create', 'audio.update', 'media.view', 'media.upload'],
+            'viewer' => ['audio.view', 'media.view'],
+        ],
     ],
 
     /*

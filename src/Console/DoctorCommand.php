@@ -217,9 +217,29 @@ final class DoctorCommand extends Command
             : $this->problem('Rejestr tras pusty', 'Provider platformy nie wystartował — sprawdź sekcję pakietów powyżej.');
 
         $violations = $registry->auditRouter($router);
-        $violations === []
-            ? $this->ok('Integralność routingu (audyt własności)')
-            : $this->problem('Trasy poza registrarem: '.implode('; ', $violations), 'Wszystkie trasy /api/* muszą przechodzić przez ModuleRouteRegistrar.');
+
+        if ($violations === []) {
+            $this->ok('Integralność routingu (audyt własności)');
+
+            return;
+        }
+
+        // Przy aktywnym route:cache router zna trasy z pliku cache, a rejestr —
+        // z bieżącego kodu. Rozbieżność po aktualizacji pakietów oznacza po prostu
+        // nieaktualny cache, a nie naruszenie architektury.
+        if ($this->laravel->routesAreCached()) {
+            $this->problem(
+                sprintf('Cache tras jest nieaktualny (%d tras z poprzedniej wersji)', count($violations)),
+                'Uruchom: php artisan optimize:clear && php artisan route:cache — następnie ponownie php artisan varsite:doctor',
+            );
+
+            return;
+        }
+
+        $this->problem(
+            'Trasy poza registrarem: '.implode('; ', $violations),
+            'Wszystkie trasy /api/* muszą przechodzić przez ModuleRouteRegistrar.',
+        );
     }
 
     /** Migracje: brak zaległych to warunek spójności schematu z kodem. */

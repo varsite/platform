@@ -13,7 +13,15 @@ namespace Varsite\Platform\Contracts;
  */
 interface PlatformModule
 {
+    /** Techniczny identyfikator modułu, np. "audio". Prefiks wszystkich jego kluczy. */
     public function key(): string;
+
+    /**
+     * Nazwa modułu widoczna dla użytkownika, np. "Audio", "Biblioteka mediów".
+     * To metadana TOŻSAMOŚCI modułu, a nie prezentacji — klienci używają jej
+     * do grupowania możliwości (sidebar panelu, sekcje w CLI, ekrany mobilne).
+     */
+    public function label(): string;
 
     public function version(): string;
 

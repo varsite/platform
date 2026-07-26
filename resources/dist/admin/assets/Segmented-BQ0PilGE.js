@@ -1,1 +1,0 @@
-import{e as l}from"./vendor-usIpMl5_.js";function i({value:a,onChange:r,options:s,ariaLabel:t}){return l.jsx("div",{className:"seg",role:"group","aria-label":t,children:s.map(e=>l.jsx("button",{type:"button","aria-pressed":a===e.value,className:a===e.value?"on":"",onClick:()=>r(e.value),children:e.label},e.value))})}export{i as S};

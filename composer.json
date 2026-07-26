@@ -22,7 +22,7 @@
             ]
         },
         "branch-alias": {
-            "dev-main": "0.1.x-dev"
+            "dev-main": "0.3.x-dev"
         }
     },
     "minimum-stability": "dev",
@@ -31,7 +31,10 @@
         "pestphp/pest": "^3.5",
         "pestphp/pest-plugin-laravel": "^3.0",
         "varsite/audio": "dev-main",
-        "varsite/media": "dev-main"
+        "varsite/media": "dev-main",
+        "varsite/cms": "dev-main",
+        "varsite/catalog": "dev-main",
+        "varsite/inventory": "dev-main"
     },
     "repositories": [
         {
@@ -41,6 +44,18 @@
         {
             "type": "path",
             "url": "../module-media"
+        },
+        {
+            "type": "path",
+            "url": "../module-cms"
+        },
+        {
+            "type": "path",
+            "url": "../module-catalog"
+        },
+        {
+            "type": "path",
+            "url": "../module-inventory"
         }
     ],
     "autoload-dev": {
