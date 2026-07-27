@@ -1,0 +1,1 @@
+import{e as s}from"./vendor-DB0pxLO-.js";import{c as o}from"./index-CQJMhN8C.js";function l({checked:t,onCheckedChange:i,label:r}){return s.jsx("button",{type:"button",role:"switch","aria-checked":t,"aria-label":r,className:o("switch",t&&"switch--on"),onClick:()=>i==null?void 0:i(!t)})}export{l as S};

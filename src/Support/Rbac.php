@@ -45,10 +45,8 @@ final class Rbac
     {
         $permissions = (array) config('platform.auth.core_permissions', []);
 
-        foreach ($this->modules->all() as $module) {
-            foreach ($module->permissions() as $permission) {
-                $permissions[] = $permission;
-            }
+        foreach ($this->modules->permissions() as $permission) {
+            $permissions[] = $permission;
         }
 
         return array_values(array_unique($permissions));

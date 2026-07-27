@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Schema;
 use Throwable;
 use Varsite\Platform\Routing\RouteRegistry;
 use Varsite\Platform\Support\ModuleManager;
+use Varsite\Platform\Support\ModuleRegistry;
 
 /**
  * `varsite:doctor` — pełna diagnostyka instalacji/wdrożenia. Odpowiada na
@@ -22,7 +23,7 @@ use Varsite\Platform\Support\ModuleManager;
  */
 final class DoctorCommand extends Command
 {
-    protected $signature = 'varsite:doctor';
+    protected $signature = 'varsite:doctor {--fix : Napraw automatycznie to, co da się naprawić bezpiecznie}';
 
     protected $description = 'Diagnostyka instalacji platformy: środowisko, pakiety, baza, panel, routing (kod 1 przy błędach krytycznych)';
 
@@ -53,6 +54,7 @@ final class DoctorCommand extends Command
         $this->guard('Panel', fn () => $this->checkPanel());
         $this->guard('Routing', fn () => $this->checkRouting($registry, $router, $modules));
         $this->guard('Moduły', fn () => $this->checkModules($modules));
+        $this->guard('Inwentarz modułów', fn () => $this->checkModuleInventory());
         $this->guard('Infrastruktura', fn () => $this->checkInfrastructure());
 
         $this->render();
@@ -319,17 +321,97 @@ final class DoctorCommand extends Command
         $collisions = [];
 
         foreach ($all as $module) {
-            foreach ($module->permissions() as $permission) {
-                if (isset($seen[$permission]) && $seen[$permission] !== $module->key()) {
-                    $collisions[] = sprintf('%s (%s ↔ %s)', $permission, $seen[$permission], $module->key());
+            foreach ($module->permissions as $permission) {
+                if (isset($seen[$permission]) && $seen[$permission] !== $module->key) {
+                    $collisions[] = sprintf('%s (%s ↔ %s)', $permission, $seen[$permission], $module->key);
                 }
-                $seen[$permission] = $module->key();
+                $seen[$permission] = $module->key;
             }
         }
 
         $collisions === []
             ? $this->ok(sprintf('Uprawnienia modułów bez kolizji (%d)', count($seen)))
             : $this->problem('Kolizje uprawnień: '.implode(', ', $collisions), 'Uprawnienia muszą mieć prefiks modułu (np. "blog.view").');
+    }
+
+    /**
+     * Inwentarz modułów: każdy wykryty moduł musi mieć rekord stanu, a zapisana
+     * wersja zgadzać się z tą, którą deklaruje kod.
+     */
+    private function checkModuleInventory(): void
+    {
+        if (! $this->databaseReachable || ! Schema::hasTable('platform_modules')) {
+            $this->caution('Inwentarz modułów niedostępny', 'Uruchom: php artisan varsite:update');
+
+            return;
+        }
+
+        /** @var ModuleRegistry $registry */
+        $registry = $this->laravel->make(ModuleRegistry::class);
+        /** @var ModuleManager $manager */
+        $manager = $this->laravel->make(ModuleManager::class);
+
+        $state = $registry->all();
+        $missing = [];
+        $outdated = [];
+
+        foreach ($manager->discovered() as $manifest) {
+            $row = $state[$manifest->key] ?? null;
+
+            if ($row === null) {
+                $missing[] = $manifest->key;
+
+                continue;
+            }
+
+            if ((string) $row->installed_version !== $manifest->version) {
+                $outdated[] = sprintf('%s (%s → %s)', $manifest->key, $row->installed_version, $manifest->version);
+            }
+        }
+
+        if ($missing !== []) {
+            $this->repairable(
+                'Moduły bez rekordu w inwentarzu: '.implode(', ', $missing),
+                'Uruchom: php artisan varsite:update',
+                static function () use ($registry): bool {
+                    $registry->synchronize((string) config('platform.contract.version'));
+
+                    return true;
+                },
+            );
+        } elseif ($outdated !== []) {
+            $this->repairable(
+                'Zapisana wersja różni się od kodu: '.implode(', ', $outdated),
+                'Uruchom: php artisan varsite:update',
+                static function () use ($registry): bool {
+                    $registry->synchronize((string) config('platform.contract.version'));
+
+                    return true;
+                },
+            );
+        } else {
+            $this->ok(sprintf('Inwentarz modułów spójny (%d)', count($state)));
+        }
+
+        $failures = $manager->failures();
+
+        if ($failures !== []) {
+            foreach ($failures as $key => $message) {
+                $this->problem(
+                    sprintf('Moduł "%s" nie zarejestrował się poprawnie', $key),
+                    $message.' — sprawdź logi i zgodność wersji pakietu.',
+                );
+            }
+        }
+
+        $disabled = array_filter($state, static fn (object $row): bool => (string) $row->status === 'disabled');
+
+        if ($disabled !== []) {
+            $this->caution(
+                'Moduły wyłączone: '.implode(', ', array_keys($disabled)),
+                'To świadoma decyzja administratora — włącz je na ekranie Moduły, jeśli mają działać.',
+            );
+        }
     }
 
     /** Infrastruktura: kolejki, harmonogram, poczta, cache. */
@@ -394,6 +476,33 @@ final class DoctorCommand extends Command
                 sprintf('%s: %s', $e::class, $e->getMessage()),
             );
         }
+    }
+
+    /**
+     * Problem możliwy do naprawienia automatycznie.
+     *
+     * Naprawiamy wyłącznie operacje BEZPIECZNE: takie, które nie usuwają danych
+     * i nie zmieniają decyzji administratora. Migracje i konfiguracja środowiska
+     * pozostają poza zakresem --fix.
+     *
+     * @param callable():bool $repair
+     */
+    private function repairable(string $label, string $remedy, callable $repair): void
+    {
+        if (! $this->option('fix')) {
+            $this->problem($label, $remedy.' (lub uruchom: php artisan varsite:doctor --fix)');
+
+            return;
+        }
+
+        if ($repair()) {
+            $this->results[] = ['PASS', $label.' — naprawione automatycznie', ''];
+            $this->line(sprintf('  <fg=green>NAPRAWIONO</> %s', $label));
+
+            return;
+        }
+
+        $this->problem($label, $remedy);
     }
 
     private function ok(string $label): void

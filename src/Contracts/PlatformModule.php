@@ -5,26 +5,16 @@ declare(strict_types=1);
 namespace Varsite\Platform\Contracts;
 
 /**
- * Kontrakt modułu platformy. Każdy moduł (pakiet) implementuje go, aby zadeklarować
- * swoje możliwości. Rdzeń (ModuleManager) zbiera moduły; RBAC seeduje uprawnienia,
- * a OpenAPI składa się z fragmentów modułów. Dodanie modułu nie dotyka istniejących.
+ * Moduł platformy.
  *
- * Extension point (JIT): interfejs istnieje w Fazie 0; konkretne moduły powstają później.
+ * Jedna metoda: moduł przedstawia swoją tożsamość. Wszystko, co platforma
+ * powinna o nim wiedzieć, mieści się w manifeście — przyszłe metadane dochodzą
+ * jako jego pola, nie jako kolejne interfejsy.
+ *
+ * Rejestracja tras, polityk i możliwości odbywa się przez ModuleManager::module(),
+ * który wykonuje ją wyłącznie dla modułu aktywnego. Provider nie zawiera warunków.
  */
 interface PlatformModule
 {
-    /** Techniczny identyfikator modułu, np. "audio". Prefiks wszystkich jego kluczy. */
-    public function key(): string;
-
-    /**
-     * Nazwa modułu widoczna dla użytkownika, np. "Audio", "Biblioteka mediów".
-     * To metadana TOŻSAMOŚCI modułu, a nie prezentacji — klienci używają jej
-     * do grupowania możliwości (sidebar panelu, sekcje w CLI, ekrany mobilne).
-     */
-    public function label(): string;
-
-    public function version(): string;
-
-    /** @return array<int, string> uprawnienia do RBAC */
-    public function permissions(): array;
+    public function manifest(): ModuleManifest;
 }

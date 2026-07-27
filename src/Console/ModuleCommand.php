@@ -6,7 +6,7 @@ namespace Varsite\Platform\Console;
 
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
-use Varsite\Platform\Contracts\PlatformModule;
+use Varsite\Platform\Contracts\ModuleManifest;
 use Varsite\Platform\Routing\RouteRegistry;
 use Varsite\Platform\Support\ModuleManager;
 
@@ -42,7 +42,7 @@ final class ModuleCommand extends Command
     private function listModules(ModuleManager $modules): int
     {
         $rows = array_map(
-            static fn (PlatformModule $m): array => [$m->key(), $m->version(), implode(', ', $m->permissions())],
+            static fn (ModuleManifest $m): array => [$m->key, $m->version, implode(', ', $m->permissions)],
             $modules->all(),
         );
 
@@ -80,7 +80,7 @@ final class ModuleCommand extends Command
             return self::FAILURE;
         }
 
-        $this->components->info(sprintf('Varsite Platform — moduł "%s" (%s)', $key, $module->version()));
+        $this->components->info(sprintf('Varsite Platform — moduł "%s" (%s)', $key, $module->version));
 
         $this->components->task('Zasoby modułu (config, tłumaczenia — jeśli publikowane)', function () use ($key): bool {
             $this->callSilently('vendor:publish', ['--tag' => "varsite-module-{$key}"]);
@@ -116,7 +116,7 @@ final class ModuleCommand extends Command
             ->values();
 
         $this->newLine();
-        $this->components->twoColumnDetail('<options=bold>Uprawnienia</>', implode(', ', $module->permissions()));
+        $this->components->twoColumnDetail('<options=bold>Uprawnienia</>', implode(', ', $module->permissions));
         $this->components->twoColumnDetail('<options=bold>Trasy API</>', (string) $owned->count());
         $this->table(['Metoda', 'URI'], $owned->all());
         $this->components->bulletList([

@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 use Varsite\Platform\Support\ModuleManager;
+use Varsite\Platform\Support\ModuleRegistry;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\multiselect;
@@ -85,6 +86,16 @@ final class InstallCommand extends Command
                 return true;
             });
         }
+
+        // Inwentarz musi znać każdy moduł od razu po instalacji — także wtedy,
+        // gdy migracje pominięto, bo panel bez rekordów pokazałby platformę
+        // bez modułów aż do pierwszej aktualizacji.
+        $this->components->task('Inwentarz modułów', function (): bool {
+            $this->laravel->make(ModuleRegistry::class)
+                ->synchronize((string) config('platform.contract.version'));
+
+            return true;
+        });
 
         $this->installOptionalModules();
 
@@ -264,7 +275,7 @@ final class InstallCommand extends Command
 
         $options = [];
         foreach ($available as $module) {
-            $options[$module->key()] = sprintf('%s (%s)', $module->key(), $module->version());
+            $options[$module->key] = sprintf('%s (%s)', $module->key, $module->version);
         }
 
         $selected = $this->input->isInteractive()

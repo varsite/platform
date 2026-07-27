@@ -29,9 +29,11 @@ use Varsite\Platform\Capabilities\Filter;
 use Varsite\Platform\Capabilities\ResourceCapability;
 use Varsite\Platform\Capabilities\SettingCapability;
 use Varsite\Platform\Capabilities\WidgetCapability;
+use Varsite\Platform\Enums\ModuleStatus;
 use Varsite\Platform\Routing\ModuleRouteRegistrar;
 use Varsite\Platform\Routing\RouteRegistry;
 use Varsite\Platform\Support\ModuleManager;
+use Varsite\Platform\Support\ModuleRegistry;
 use Varsite\Platform\Support\Rbac;
 use Varsite\Platform\Support\Settings;
 
@@ -52,6 +54,7 @@ final class PlatformServiceProvider extends ServiceProvider
         $this->app->singleton(CapabilityRegistry::class);
         $this->app->singleton(Rbac::class);
         $this->app->singleton(Settings::class);
+        $this->app->singleton(ModuleRegistry::class);
         $this->app->singleton(RouteRegistry::class);
         $this->app->singleton(
             ModuleRouteRegistrar::class,
@@ -81,6 +84,24 @@ final class PlatformServiceProvider extends ServiceProvider
         $this->applyStoredSettings();
 
         $this->app->make(CapabilityRegistry::class)->register(
+            ResourceCapability::make('platform.modules')
+                ->label('Moduł', 'Moduły')
+                ->icon('box')
+                ->endpoint('/v1/admin/modules')
+                ->permission('platform.modules')
+                ->columns([
+                    Column::text('name')->label('Moduł')->sortable()->primary(),
+                    Column::status('status', ModuleStatus::tones())->label('Stan'),
+                    Column::text('version')->label('Wersja'),
+                    Column::text('author')->label('Autor'),
+                    Column::number('boot_time_ms')->label('Boot (ms)'),
+                ])
+                ->filters([
+                    Filter::search(['name', 'key']),
+                    Filter::segmented('status', ['all' => 'Wszystkie'] + ModuleStatus::options()),
+                ])
+                ->actions([]),
+        )->register(
             ResourceCapability::make('platform.users')
                 ->label('Konto', 'Użytkownicy')
                 ->icon('users')

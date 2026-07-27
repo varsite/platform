@@ -6,7 +6,7 @@ namespace Varsite\Platform\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Varsite\Platform\Contracts\PlatformModule;
+use Varsite\Platform\Contracts\ModuleManifest;
 use Varsite\Platform\Http\Concerns\CachesContract;
 use Varsite\Platform\Capabilities\CapabilityRegistry;
 use Varsite\Platform\Support\ModuleManager;
@@ -50,11 +50,9 @@ final class BootstrapController
         $permissions = $rbac->permissionsFor($user);
 
         $installed = array_map(
-            static fn (PlatformModule $m): array => [
-                'key' => $m->key(),
-                'label' => $m->label(),
-                'version' => $m->version(),
-            ],
+            // Manifest jest jedynym źródłem metadanych o module — klient
+            // dostaje sekcję, ikonę i kolejność bez pytania o nie osobno.
+            static fn (ModuleManifest $m): array => $m->toArray(),
             array_values($modules->all()),
         );
 
@@ -73,6 +71,9 @@ final class BootstrapController
             ],
             'permissions' => $permissions,
             'modules' => $installed,
+            // Sekcje: etykiety i kolejność obszarów nawigacji. Klient wolno
+            // je zignorować — moduł zawsze niesie własny identyfikator sekcji.
+            'sections' => $this->sections(),
             'capabilities' => $capabilities->manifest($permissions),
         ];
 
@@ -83,5 +84,31 @@ final class BootstrapController
             implode(',', array_map(static fn (array $m): string => $m['key'].'@'.$m['version'], $installed)),
             implode(',', $permissions),
         ));
+    }
+
+    /**
+     * Obszary organizacyjne z konfiguracji instalacji, uporządkowane.
+     *
+     * @return list<array{key: string, label: string, icon: string|null, order: int}>
+     */
+    private function sections(): array
+    {
+        /** @var array<string, array{label?: string, icon?: string, order?: int}> $configured */
+        $configured = (array) config('platform.navigation.sections', []);
+
+        $sections = [];
+
+        foreach ($configured as $key => $definition) {
+            $sections[] = [
+                'key' => (string) $key,
+                'label' => (string) ($definition['label'] ?? $key),
+                'icon' => $definition['icon'] ?? null,
+                'order' => (int) ($definition['order'] ?? 100),
+            ];
+        }
+
+        usort($sections, static fn (array $a, array $b): int => [$a['order'], $a['key']] <=> [$b['order'], $b['key']]);
+
+        return $sections;
     }
 }

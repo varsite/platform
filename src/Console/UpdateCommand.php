@@ -7,6 +7,7 @@ namespace Varsite\Platform\Console;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 use Varsite\Platform\Support\ModuleManager;
+use Varsite\Platform\Support\ModuleRegistry;
 
 /**
  * Aktualizacja instalacji po pobraniu nowych wersji pakietów.
@@ -26,7 +27,7 @@ final class UpdateCommand extends Command
 
     protected $description = 'Aktualizuje instalację platformy po pobraniu nowych wersji pakietów';
 
-    public function handle(ModuleManager $modules): int
+    public function handle(ModuleManager $modules, ModuleRegistry $registry): int
     {
         $this->components->info('Varsite Platform — aktualizacja');
 
@@ -36,7 +37,7 @@ final class UpdateCommand extends Command
         $this->components->twoColumnDetail(
             '<options=bold>Zainstalowane moduły</>',
             $keys === [] ? 'brak (sam rdzeń)' : implode(', ', array_map(
-                static fn (object $m): string => $m->key().' '.$m->version(),
+                static fn (object $m): string => $m->key.' '.$m->version,
                 $installed,
             )),
         );
@@ -48,6 +49,22 @@ final class UpdateCommand extends Command
 
             return true;
         });
+
+        // Inwentarz musi znać każdy wykryty moduł, zanim cokolwiek dalej się
+        // wydarzy — inaczej nowy pakiet byłby niewidoczny w panelu.
+        $this->components->task('Synchronizacja inwentarza modułów', function () use ($registry, &$sync): bool {
+            $sync = $registry->synchronize((string) config('platform.contract.version'));
+
+            return true;
+        });
+
+        if ($sync['added'] !== []) {
+            $this->components->twoColumnDetail('<options=bold>Nowe moduły</>', implode(', ', $sync['added']));
+        }
+
+        if ($sync['updated'] !== []) {
+            $this->components->twoColumnDetail('<options=bold>Zaktualizowane</>', implode(', ', $sync['updated']));
+        }
 
         if (! $this->option('skip-migrations')) {
             $this->components->task('Migracje rdzenia i modułów', function (): bool {
