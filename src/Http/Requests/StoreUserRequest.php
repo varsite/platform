@@ -32,7 +32,7 @@ final class StoreUserRequest extends FormRequest
     private function availableRoles(): array
     {
         return array_values(array_unique([
-            ...(array) config('platform.auth.superuser_roles', []),
+            ...app(\Varsite\Platform\Support\Rbac::class)->superuserRoles(),
             ...array_keys((array) config('platform.auth.roles', [])),
         ]));
     }

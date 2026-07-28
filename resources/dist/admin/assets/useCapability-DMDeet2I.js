@@ -1,0 +1,1 @@
+import{B as a}from"./vendor-D515-6qf.js";import{p as o,q as t}from"./index-vHenI4_Y.js";function i(r){const e=(r==null?void 0:r.key)??null,n=a({queryKey:t.capability(e??""),queryFn:()=>o.admin.capability(e).then(u=>u.data),enabled:e!==null,staleTime:1/0});return{declaration:n.data??null,loading:e!==null&&n.isPending,error:n.error}}export{i as u};

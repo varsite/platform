@@ -29,6 +29,8 @@ final class UpdateCommand extends Command
 
     public function handle(ModuleManager $modules, ModuleRegistry $registry): int
     {
+        $sync = ['added' => [], 'updated' => []];
+
         $this->components->info('Varsite Platform — aktualizacja');
 
         $installed = $modules->all();
@@ -50,8 +52,16 @@ final class UpdateCommand extends Command
             return true;
         });
 
-        // Inwentarz musi znać każdy wykryty moduł, zanim cokolwiek dalej się
-        // wydarzy — inaczej nowy pakiet byłby niewidoczny w panelu.
+if (! $this->option('skip-migrations')) {
+            $this->components->task('Migracje rdzenia i modułów', function (): bool {
+                $this->callSilently('migrate', ['--force' => true]);
+
+                return true;
+            });
+        }
+
+        // Synchronizacja PO migracjach: tabela inwentarza powstaje właśnie w nich,
+        // więc wcześniejszy zapis nie miałby dokąd trafić.
         $this->components->task('Synchronizacja inwentarza modułów', function () use ($registry, &$sync): bool {
             $sync = $registry->synchronize((string) config('platform.contract.version'));
 
@@ -66,13 +76,8 @@ final class UpdateCommand extends Command
             $this->components->twoColumnDetail('<options=bold>Zaktualizowane</>', implode(', ', $sync['updated']));
         }
 
-        if (! $this->option('skip-migrations')) {
-            $this->components->task('Migracje rdzenia i modułów', function (): bool {
-                $this->callSilently('migrate', ['--force' => true]);
+        
 
-                return true;
-            });
-        }
 
         $this->components->task(
             $keys === [] ? 'Zasoby modułów (brak modułów)' : sprintf('Zasoby modułów (%s)', implode(', ', $keys)),

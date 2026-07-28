@@ -117,12 +117,21 @@ final class UserController
     {
         Gate::authorize('platform.users');
 
-        $superusers = (array) config('platform.auth.superuser_roles', []);
-        $named = array_keys((array) config('platform.auth.roles', []));
+        // Identyfikator pozostaje angielski i niezmienny; etykieta to warstwa
+        // prezentacji z konfiguracji. Brak etykiety = pokazujemy identyfikator.
+        $labels = (array) config('platform.auth.role_labels', []);
+
+        $identifiers = array_values(array_unique([
+            ...$rbac->superuserRoles(),
+            ...array_keys((array) config('platform.auth.roles', [])),
+        ]));
 
         $roles = array_map(
-            static fn (string $role): array => ['id' => $role, 'name' => $role],
-            array_values(array_unique([...$superusers, ...$named])),
+            static fn (string $role): array => [
+                'id' => $role,
+                'name' => (string) ($labels[$role] ?? $role),
+            ],
+            $identifiers,
         );
 
         return response()->json(['data' => $roles]);

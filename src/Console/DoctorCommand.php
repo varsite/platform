@@ -54,6 +54,7 @@ final class DoctorCommand extends Command
         $this->guard('Panel', fn () => $this->checkPanel());
         $this->guard('Routing', fn () => $this->checkRouting($registry, $router, $modules));
         $this->guard('Moduły', fn () => $this->checkModules($modules));
+        $this->guard('Konfiguracja', fn () => $this->checkPublishedConfig());
         $this->guard('Inwentarz modułów', fn () => $this->checkModuleInventory());
         $this->guard('Infrastruktura', fn () => $this->checkInfrastructure());
 
@@ -332,6 +333,79 @@ final class DoctorCommand extends Command
         $collisions === []
             ? $this->ok(sprintf('Uprawnienia modułów bez kolizji (%d)', count($seen)))
             : $this->problem('Kolizje uprawnień: '.implode(', ', $collisions), 'Uprawnienia muszą mieć prefiks modułu (np. "blog.view").');
+    }
+
+    /**
+     * Opublikowany config/platform.php nie może być starszy niż pakiet.
+     *
+     * Laravel scala konfigurację tylko na najwyższym poziomie, więc klucze
+     * dodane w nowszym wydaniu nie docierają do instalacji, która opublikowała
+     * plik wcześniej. To cicho wyłącza funkcje — wykrywamy i naprawiamy.
+     */
+    private function checkPublishedConfig(): void
+    {
+        $published = config_path('platform.php');
+
+        if (! is_file($published)) {
+            $this->ok('Konfiguracja z pakietu (bez publikacji)');
+
+            return;
+        }
+
+        $packaged = dirname(__DIR__, 2).'/config/platform.php';
+
+        if (! is_file($packaged)) {
+            return;
+        }
+
+        /** @var array<string, mixed> $current */
+        $current = require $published;
+        /** @var array<string, mixed> $reference */
+        $reference = require $packaged;
+
+        $missing = $this->missingKeys($reference, $current);
+
+        if ($missing === []) {
+            $this->ok('Opublikowana konfiguracja zawiera komplet kluczy');
+
+            return;
+        }
+
+        $this->repairable(
+            'Opublikowana konfiguracja bez kluczy z nowszego wydania: '.implode(', ', array_slice($missing, 0, 5)),
+            'Uruchom: php artisan vendor:publish --tag=platform-config --force (nadpisze plik wartościami z pakietu).',
+            static function () use ($published, $packaged): bool {
+                return copy($packaged, $published);
+            },
+        );
+    }
+
+    /**
+     * Klucze obecne w referencji, a brakujące w bieżącej konfiguracji.
+     *
+     * @param array<string, mixed> $reference
+     * @param array<string, mixed> $current
+     * @return list<string>
+     */
+    private function missingKeys(array $reference, array $current, string $prefix = ''): array
+    {
+        $missing = [];
+
+        foreach ($reference as $key => $value) {
+            $path = $prefix === '' ? (string) $key : $prefix.'.'.$key;
+
+            if (! array_key_exists($key, $current)) {
+                $missing[] = $path;
+
+                continue;
+            }
+
+            if (is_array($value) && ! array_is_list($value) && is_array($current[$key])) {
+                $missing = [...$missing, ...$this->missingKeys($value, $current[$key], $path)];
+            }
+        }
+
+        return $missing;
     }
 
     /**

@@ -1,0 +1,1 @@
+import{e as s}from"./vendor-D515-6qf.js";function l({icon:t,title:a,description:e,action:r,iconStyle:i}){return s.jsxs("div",{className:"state",children:[s.jsx("div",{className:"state__ic",style:i,children:t}),s.jsx("h3",{children:a}),e&&s.jsx("p",{children:e}),r]})}export{l as E};

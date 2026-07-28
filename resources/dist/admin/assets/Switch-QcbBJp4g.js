@@ -1,0 +1,1 @@
+import{e as s}from"./vendor-D515-6qf.js";import{d as o}from"./index-vHenI4_Y.js";function l({checked:t,onCheckedChange:i,label:r}){return s.jsx("button",{type:"button",role:"switch","aria-checked":t,"aria-label":r,className:o("switch",t&&"switch--on"),onClick:()=>i==null?void 0:i(!t)})}export{l as S};

@@ -26,6 +26,19 @@ use Illuminate\Contracts\Auth\Authenticatable;
  */
 final class Rbac
 {
+    /**
+     * Uprawnienia rdzenia — WARTOŚCI DOMYŚLNE W KODZIE.
+     *
+     * Konfiguracja może je rozszerzyć, ale nie warunkuje ich istnienia.
+     * Opublikowany config/platform.php w istniejącej instalacji nie zawiera
+     * kluczy dodanych w nowszym wydaniu, więc poleganie wyłącznie na nim
+     * wyłączałoby funkcje po każdej aktualizacji.
+     */
+    private const CORE_PERMISSIONS = ['platform.settings', 'platform.users', 'platform.modules'];
+
+    /** Role o pełnym dostępie — również z wartością domyślną w kodzie. */
+    private const SUPERUSER_ROLES = ['owner'];
+
     public function __construct(private readonly ModuleManager $modules) {}
 
     /** Rola przypisana użytkownikowi; brak roli = brak uprawnień. */
@@ -43,7 +56,11 @@ final class Rbac
      */
     public function available(): array
     {
-        $permissions = (array) config('platform.auth.core_permissions', []);
+        // Suma: to, co zna kod, plus ewentualne rozszerzenia z konfiguracji.
+        $permissions = array_unique([
+            ...self::CORE_PERMISSIONS,
+            ...(array) config('platform.auth.core_permissions', []),
+        ]);
 
         foreach ($this->modules->permissions() as $permission) {
             $permissions[] = $permission;
@@ -71,7 +88,12 @@ final class Rbac
             return [];
         }
 
-        if (in_array($role, (array) config('platform.auth.superuser_roles', []), true)) {
+        $superusers = array_unique([
+            ...self::SUPERUSER_ROLES,
+            ...(array) config('platform.auth.superuser_roles', []),
+        ]);
+
+        if (in_array($role, $superusers, true)) {
             return $this->available();
         }
 
@@ -79,6 +101,15 @@ final class Rbac
         $map = (array) config('platform.auth.roles', []);
 
         return array_values(array_unique((array) ($map[$role] ?? [])));
+    }
+
+    /** @return list<string> role o pełnym dostępie w tej instalacji */
+    public function superuserRoles(): array
+    {
+        return array_values(array_unique([
+            ...self::SUPERUSER_ROLES,
+            ...(array) config('platform.auth.superuser_roles', []),
+        ]));
     }
 
     public function allows(?Authenticatable $user, string $permission): bool
