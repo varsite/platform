@@ -13,6 +13,7 @@ use Throwable;
 use Varsite\Platform\Routing\RouteRegistry;
 use Varsite\Platform\Support\ModuleManager;
 use Varsite\Platform\Support\ModuleRegistry;
+use Varsite\Platform\Support\Rbac;
 
 /**
  * `varsite:doctor` — pełna diagnostyka instalacji/wdrożenia. Odpowiada na
@@ -54,6 +55,7 @@ final class DoctorCommand extends Command
         $this->guard('Panel', fn () => $this->checkPanel());
         $this->guard('Routing', fn () => $this->checkRouting($registry, $router, $modules));
         $this->guard('Moduły', fn () => $this->checkModules($modules));
+        $this->guard('Konta i role', fn () => $this->checkAccountRoles());
         $this->guard('Konfiguracja', fn () => $this->checkPublishedConfig());
         $this->guard('Inwentarz modułów', fn () => $this->checkModuleInventory());
         $this->guard('Infrastruktura', fn () => $this->checkInfrastructure());
@@ -333,6 +335,90 @@ final class DoctorCommand extends Command
         $collisions === []
             ? $this->ok(sprintf('Uprawnienia modułów bez kolizji (%d)', count($seen)))
             : $this->problem('Kolizje uprawnień: '.implode(', ', $collisions), 'Uprawnienia muszą mieć prefiks modułu (np. "blog.view").');
+    }
+
+    /**
+     * Instalacja bez konta o rozpoznanej roli jest praktycznie zablokowana.
+     *
+     * Konto z rolą spoza konfiguracji dostaje PUSTY zestaw uprawnień, więc
+     * panel pokazuje sam pulpit i wygląda na zepsuty. Diagnostyka musi to
+     * zgłosić jako stan krytyczny, a nie milczeć.
+     */
+    private function checkAccountRoles(): void
+    {
+        if (! $this->databaseReachable || ! Schema::hasTable('users')) {
+            return;
+        }
+
+        /** @var Rbac $rbac */
+        $rbac = $this->laravel->make(Rbac::class);
+        $model = (string) config('auth.providers.users.model');
+
+        if (! class_exists($model)) {
+            return;
+        }
+
+        $users = $model::query()->get();
+
+        if ($users->isEmpty()) {
+            return; // brak kont zgłasza osobna kontrola
+        }
+
+        $known = array_merge($rbac->superuserRoles(), array_keys((array) config('platform.auth.roles', [])));
+        $unrecognised = [];
+        $privileged = 0;
+
+        foreach ($users as $user) {
+            $role = (string) ($user->role ?? '');
+
+            if ($role !== '' && ! in_array($role, $known, true)) {
+                $unrecognised[] = sprintf('%s (%s)', $user->email, $role);
+            }
+
+            if ($rbac->permissionsFor($user) !== []) {
+                $privileged++;
+            }
+        }
+
+        if ($unrecognised !== []) {
+            $this->repairable(
+                'Konta z nierozpoznaną rolą: '.implode(', ', array_slice($unrecognised, 0, 3)),
+                sprintf('Dopuszczalne identyfikatory: %s. Popraw kolumnę role albo dopisz rolę do konfiguracji.', implode(', ', $known)),
+                function () use ($users, $rbac, $known): bool {
+                    // Naprawa bezpieczna: identyfikator odtwarzany z ETYKIETY,
+                    // więc "Właściciel" wraca do "owner" bez zgadywania.
+                    $labels = array_flip((array) config('platform.auth.role_labels', []));
+
+                    foreach ($users as $user) {
+                        $role = (string) ($user->role ?? '');
+
+                        if ($role === '' || in_array($role, $known, true)) {
+                            continue;
+                        }
+
+                        if (isset($labels[$role])) {
+                            $user->role = $labels[$role];
+                            $user->save();
+                        }
+                    }
+
+                    return true;
+                },
+            );
+
+            return;
+        }
+
+        if ($privileged === 0) {
+            $this->problem(
+                'Żadne konto nie ma uprawnień do panelu',
+                sprintf('Nadaj roli uprzywilejowanej (%s) co najmniej jednemu kontu.', implode(', ', $rbac->superuserRoles())),
+            );
+
+            return;
+        }
+
+        $this->ok(sprintf('Konta z dostępem do panelu: %d z %d', $privileged, $users->count()));
     }
 
     /**

@@ -163,7 +163,7 @@ final class ModuleManager
     private function loadStatuses(): array
     {
         try {
-            if (! Schema::hasTable('platform_modules')) {
+            if (! InstallationState::hasTable('platform_modules')) {
                 return [];
             }
 

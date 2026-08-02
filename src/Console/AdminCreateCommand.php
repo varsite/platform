@@ -15,7 +15,7 @@ final class AdminCreateCommand extends Command
         {--name=Administrator : Nazwa wyświetlana}
         {--email= : E-mail logowania (wymagany)}
         {--password= : Hasło (wymagane)}
-        {--role=Właściciel : Rola wyświetlana w panelu}';
+        {--role=owner : Identyfikator roli (angielski; etykiety w platform.auth.role_labels)}';
 
     protected $description = 'Tworzy lub aktualizuje konto administratora panelu';
 

@@ -7,6 +7,7 @@ namespace Varsite\Platform\Console;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
+use Varsite\Platform\Support\InstallationState;
 use Varsite\Platform\Support\ModuleManager;
 use Varsite\Platform\Support\ModuleRegistry;
 
@@ -82,6 +83,7 @@ final class InstallCommand extends Command
         if (! $this->option('skip-migrations')) {
             $this->components->task('Migracje bazy danych (rdzeń + moduły)', function (): bool {
                 $this->callSilently('migrate', ['--force' => true]);
+                InstallationState::forget();
 
                 return true;
             });

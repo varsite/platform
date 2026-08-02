@@ -240,7 +240,7 @@ final class ModuleRegistry
     private function available(): bool
     {
         try {
-            return $this->available ??= Schema::hasTable(self::TABLE);
+            return $this->available ??= InstallationState::hasTable(self::TABLE);
         } catch (Throwable) {
             return false;
         }

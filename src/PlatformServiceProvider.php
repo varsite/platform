@@ -32,6 +32,7 @@ use Varsite\Platform\Capabilities\WidgetCapability;
 use Varsite\Platform\Enums\ModuleStatus;
 use Varsite\Platform\Routing\ModuleRouteRegistrar;
 use Varsite\Platform\Routing\RouteRegistry;
+use Varsite\Platform\Support\InstallationState;
 use Varsite\Platform\Support\ModuleManager;
 use Varsite\Platform\Support\ModuleRegistry;
 use Varsite\Platform\Support\Rbac;
@@ -247,7 +248,7 @@ final class PlatformServiceProvider extends ServiceProvider
         }
 
         try {
-            if (! Schema::hasTable('platform_settings')) {
+            if (! InstallationState::hasTable('platform_settings')) {
                 return;
             }
 
