@@ -21,6 +21,22 @@ final class ModuleRegistry
 {
     private const TABLE = 'platform_modules';
 
+    /**
+     * Stan odczytany w tym żądaniu.
+     *
+     * `null` oznacza „jeszcze nie odczytano" — odróżnienie od pustej tabeli
+     * jest istotne, bo instalacja bez modułów jest poprawnym stanem.
+     *
+     * Bez tego bufora każde wywołanie statusOf() uderzało w bazę, więc ekran
+     * modułów wykonywał 2N+2 zapytań zamiast jednego. Przy 100 modułach byłoby
+     * to 200 zapytań na jedno żądanie HTTP.
+     *
+     * @var array<string, object>|null
+     */
+    private ?array $state = null;
+
+    private ?bool $available = null;
+
     public function __construct(private readonly ModuleManager $modules) {}
 
     /**
@@ -31,11 +47,29 @@ final class ModuleRegistry
      */
     public function all(): array
     {
-        if (! $this->available()) {
-            return [];
+        if ($this->state !== null) {
+            return $this->state;
         }
 
-        return DB::table(self::TABLE)->get()->keyBy('key')->all();
+        if (! $this->available()) {
+            return $this->state = [];
+        }
+
+        /** @var array<string, object> $rows */
+        $rows = DB::table(self::TABLE)->get()->keyBy('key')->all();
+
+        return $this->state = $rows;
+    }
+
+    /**
+     * Odczyt stanu na nowo przy następnym pytaniu.
+     *
+     * Wywoływane po każdej modyfikacji inwentarza — bufor obowiązuje w obrębie
+     * jednego żądania i nie może przetrwać zapisu.
+     */
+    private function forget(): void
+    {
+        $this->state = null;
     }
 
     public function get(string $key): ?object
@@ -83,6 +117,7 @@ final class ModuleRegistry
                     'updated_at' => now(),
                 ]);
                 $added[] = $manifest->key;
+                $this->forget();
 
                 continue;
             }
@@ -95,6 +130,7 @@ final class ModuleRegistry
                     'updated_at' => now(),
                 ]);
                 $updated[] = $manifest->key;
+                $this->forget();
             }
         }
 
@@ -114,6 +150,8 @@ final class ModuleRegistry
                 'status_message' => $message,
                 'updated_at' => now(),
             ]);
+
+            $this->forget();
         }
     }
 
@@ -194,12 +232,15 @@ final class ModuleRegistry
                 'updated_at' => now(),
             ], $extra),
         );
+
+        $this->forget();
     }
 
+    /** Czy inwentarz istnieje. Sprawdzane raz na żądanie. */
     private function available(): bool
     {
         try {
-            return Schema::hasTable(self::TABLE);
+            return $this->available ??= Schema::hasTable(self::TABLE);
         } catch (Throwable) {
             return false;
         }
